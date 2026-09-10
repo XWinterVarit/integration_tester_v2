@@ -53,6 +53,9 @@ func main() {
 	fmt.Println("\n--- Running Extended Conditions Examples ---")
 	runExtendedConditionsExamples(client)
 
+	fmt.Println("\n--- Running Path Parameter Examples ---")
+	runPathParamExamples(client)
+
 	fmt.Println("\nAll examples executed successfully.")
 }
 

@@ -152,6 +152,70 @@ func TestDynamicMockServer(t *testing.T) {
 		}
 	})
 
+	t.Run("PathParameters", func(t *testing.T) {
+		err := client.RegisterRoute(mockPort, "POST", "/a/b/{ee}/c/{dd}", []ResponseFuncConfig{
+			ExtractRequestPathParam("ee", "EE_COPY"),
+			IfRequestPathParam("ee", ConditionEqual, "hello", "EE_OK", "yes"),
+			IfRequestPathParamSetCase("dd", ConditionEqual, "admin", "AdminCase"),
+
+			SetStatusCode("", 200),
+			SetJsonBody("", `{"route":"default","ee":"{{.ee}}","dd":"{{.dd}}","ee_ok":"{{.EE_OK}}"}`),
+
+			SetStatusCode("AdminCase", 200),
+			SetJsonBody("AdminCase", `{"route":"admin","ee":"{{.ee}}","ee_copy":"{{.EE_COPY}}"}`),
+		})
+		if err != nil {
+			t.Fatalf("RegisterRoute failed: %v", err)
+		}
+
+		call := func(path string) (*http.Response, string) {
+			resp, err := http.Post(fmt.Sprintf("http://localhost:%d%s", mockPort, path), "application/json", nil)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			return resp, string(b)
+		}
+
+		// Default case; ee=hello satisfies the condition.
+		resp, body := call("/a/b/hello/c/user")
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+		for _, want := range []string{`"route":"default"`, `"ee":"hello"`, `"dd":"user"`, `"ee_ok":"yes"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body %s missing %s", body, want)
+			}
+		}
+
+		// Case routing on the "dd" path param.
+		resp, body = call("/a/b/hello/c/admin")
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+		for _, want := range []string{`"route":"admin"`, `"ee":"hello"`, `"ee_copy":"hello"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body %s missing %s", body, want)
+			}
+		}
+
+		// Condition not satisfied: ee != hello.
+		_, body = call("/a/b/world/c/user")
+		if strings.Contains(body, `"ee_ok":"yes"`) {
+			t.Errorf("expected ee_ok to be empty, got %s", body)
+		}
+		if !strings.Contains(body, `"ee":"world"`) {
+			t.Errorf("expected ee=world, got %s", body)
+		}
+
+		// Wrong literal segment -> no match -> 404.
+		resp, _ = call("/a/b/hello/x/user")
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", resp.StatusCode)
+		}
+	})
+
 	t.Run("ResetPort", func(t *testing.T) {
 		err := client.ResetPort(mockPort)
 		if err != nil {

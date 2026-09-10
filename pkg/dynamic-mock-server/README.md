@@ -148,8 +148,50 @@ the dynamic mock server:
 - **extended_conditions_examples.go** — newer matching features.
 - **generator_examples.go** — dynamic responses created at request time.
 - **new_features_examples.go** — demonstrations of newly added capabilities.
+- **path_param_examples.go** — parameterized routes like `/a/b/{ee}/c/{dd}`.
 
 Run these examples to see how the client and controller work together.
+
+---
+
+### Path Parameters
+
+Route paths can contain named parameters written as `{name}`. Each placeholder
+matches exactly one non-empty path segment; every other segment must match
+literally. Captured values are injected into the template variable map, so they
+are available to conditions, cases, and response bodies.
+
+```go
+err := client.RegisterRoute(9002, "POST", "/a/b/{ee}/c/{dd}", []ResponseFuncConfig{
+    // Use a captured value in a condition (sets EE_OK="yes" when ee == "hello").
+    IfRequestPathParam("ee", ConditionEqual, "hello", "EE_OK", "yes"),
+
+    // Route to a case based on a captured value.
+    IfRequestPathParamSetCase("dd", ConditionEqual, "admin", "AdminCase"),
+
+    // Copy a captured value into an explicit variable.
+    ExtractRequestPathParam("ee", "EE_COPY"),
+
+    // Captured values are available in templates as {{.ee}} / {{.dd}}.
+    SetStatusCode("", 200),
+    SetJsonBody("", `{"ee":"{{.ee}}","dd":"{{.dd}}"}`),
+
+    SetStatusCode("AdminCase", 200),
+    SetJsonBody("AdminCase", `{"role":"admin","ee":"{{.EE_COPY}}"}`),
+})
+```
+
+Helpers:
+
+- `IfRequestPathParam(param, condition, value, dynamicVar, toBeValue)` — set a
+  variable when a path parameter satisfies a condition.
+- `IfRequestPathParamSetCase(param, condition, value, caseStr)` — switch the
+  active response case based on a path parameter.
+- `ExtractRequestPathParam(param, dynamicVar)` — copy a path parameter into a
+  dynamic variable.
+
+Matching precedence: exact route paths win over parameterized patterns. When
+several patterns could match, the lexicographically smallest pattern wins.
 
 ---
 

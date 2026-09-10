@@ -26,18 +26,20 @@ const (
 // Constants for Response Func Names
 const (
 	// PrepareData
-	FuncIfRequestHeader          = "IfRequestHeader"
-	FuncIfRequestHeaderSetCase   = "IfRequestHeaderSetCase"
-	FuncIfRequestJsonBody        = "IfRequestJsonBody"
-	FuncIfRequestJsonBodySetCase = "IfRequestJsonBodySetCase"
-	FuncIfRequestXmlBody         = "IfRequestXmlBody"
-	FuncIfRequestXmlBodySetCase  = "IfRequestXmlBodySetCase"
-	FuncIfRequestPath            = "IfRequestPath"
-	FuncIfRequestPathSetCase     = "IfRequestPathSetCase"
-	FuncIfRequestQuery           = "IfRequestQuery"
-	FuncIfRequestQuerySetCase    = "IfRequestQuerySetCase"
-	FuncIfDynamicVariable        = "IfDynamicVariable"
-	FuncIfDynamicVariableSetCase = "IfDynamicVariableSetCase"
+	FuncIfRequestHeader           = "IfRequestHeader"
+	FuncIfRequestHeaderSetCase    = "IfRequestHeaderSetCase"
+	FuncIfRequestJsonBody         = "IfRequestJsonBody"
+	FuncIfRequestJsonBodySetCase  = "IfRequestJsonBodySetCase"
+	FuncIfRequestXmlBody          = "IfRequestXmlBody"
+	FuncIfRequestXmlBodySetCase   = "IfRequestXmlBodySetCase"
+	FuncIfRequestPath             = "IfRequestPath"
+	FuncIfRequestPathSetCase      = "IfRequestPathSetCase"
+	FuncIfRequestPathParam        = "IfRequestPathParam"
+	FuncIfRequestPathParamSetCase = "IfRequestPathParamSetCase"
+	FuncIfRequestQuery            = "IfRequestQuery"
+	FuncIfRequestQuerySetCase     = "IfRequestQuerySetCase"
+	FuncIfDynamicVariable         = "IfDynamicVariable"
+	FuncIfDynamicVariableSetCase  = "IfDynamicVariableSetCase"
 
 	// JSON checks
 	FuncIfRequestJsonArrayLength         = "IfRequestJsonArrayLength"
@@ -47,11 +49,12 @@ const (
 	FuncIfRequestJsonType                = "IfRequestJsonType"
 	FuncIfRequestJsonTypeSetCase         = "IfRequestJsonTypeSetCase"
 
-	FuncExtractRequestHeader   = "ExtractRequestHeader"
-	FuncExtractRequestJsonBody = "ExtractRequestJsonBody"
-	FuncExtractRequestXmlBody  = "ExtractRequestXmlBody"
-	FuncExtractRequestPath     = "ExtractRequestPath"
-	FuncExtractRequestQuery    = "ExtractRequestQuery"
+	FuncExtractRequestHeader    = "ExtractRequestHeader"
+	FuncExtractRequestJsonBody  = "ExtractRequestJsonBody"
+	FuncExtractRequestXmlBody   = "ExtractRequestXmlBody"
+	FuncExtractRequestPath      = "ExtractRequestPath"
+	FuncExtractRequestPathParam = "ExtractRequestPathParam"
+	FuncExtractRequestQuery     = "ExtractRequestQuery"
 
 	// Generator
 	FuncGenerateRandomString       = "GenerateRandomString"

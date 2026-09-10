@@ -1,15 +1,15 @@
 export const LOG_ICONS = {
-  Stage: '📂',
-  DB: '🛢️',
-  Redis: '🧊',
-  Request: '🌍',
-  Mock: '🤖',
-  App: '⚙️',
-  Expect: '🎯',
-  Error: '❌',
-  Info: 'ℹ️',
+  Stage: '▦',
+  DB: '▤',
+  Redis: '◇',
+  Request: '↗',
+  Mock: '◈',
+  App: '▣',
+  Expect: '✓',
+  Error: '✕',
+  Info: 'ⓘ',
 }
 
 export function iconFor(type) {
-  return LOG_ICONS[type] || '🔹'
+  return LOG_ICONS[type] || '•'
 }

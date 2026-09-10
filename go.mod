@@ -6,6 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.34.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/sijms/go-ora/v2 v2.8.23
 )
 
 require (

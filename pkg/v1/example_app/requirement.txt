@@ -1,0 +1,15 @@
+-	app provide
+    o	some api that update data on oracle table
+    o	some api that read data on oracle table and expected something, if not return error
+
+-	write integration test using the lib here that, prepare table, run app, request test for success case, manipulate record in db, do another request for expected fail, done
+
+the intent of this app is to show how to use the lib write integration test that manipulate database on the fly.
+
+oracle connection info from code snipped.
+
+user := flag.String("user", getEnv("ORA_USER", "LEARN1"), "Oracle username")
+pass := flag.String("pass", getEnv("ORA_PASS", "Welcome"), "Oracle password")
+host := flag.String("host", getEnv("ORA_HOST", "localhost"), "Oracle host")
+port := flag.String("port", getEnv("ORA_PORT", "1521"), "Oracle port")
+service := flag.String("service", getEnv("ORA_SERVICE", "XE"), "Oracle service name")

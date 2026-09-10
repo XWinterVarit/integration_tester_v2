@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -189,16 +191,9 @@ func (mc *MockController) handleResetAll(w http.ResponseWriter, r *http.Request)
 func (mc *MockController) handleMockRequest(port int, w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Lookup route
+	// Lookup route (exact path first, then parameterized patterns)
 	mc.mu.RLock()
-	var steps []ResponseFuncConfig
-	if portRoutes, ok := mc.Routes[port]; ok {
-		if methodRoutes, ok := portRoutes[r.Method]; ok {
-			if s, ok := methodRoutes[r.URL.Path]; ok {
-				steps = s
-			}
-		}
-	}
+	steps, pathParams := mc.findRouteLocked(port, r.Method, r.URL.Path)
 	mc.mu.RUnlock()
 
 	if steps == nil {
@@ -210,6 +205,7 @@ func (mc *MockController) handleMockRequest(port int, w http.ResponseWriter, r *
 	}
 
 	executor := NewHandlerExecutor(w, r)
+	executor.SetPathParams(pathParams)
 	err := executor.Execute(steps)
 	if err != nil {
 		mc.Logger.Log("MockRequestError", time.Since(start), fmt.Sprintf("Error executing steps: %v", err))
@@ -223,6 +219,78 @@ func (mc *MockController) handleMockRequest(port int, w http.ResponseWriter, r *
 		"port": port, "method": r.Method, "path": r.URL.Path, "status": executor.StatusCode,
 		"variables": executor.Variables,
 	})
+}
+
+// findRouteLocked resolves a route for the given request path. Exact matches are
+// preferred; otherwise the first parameterized pattern (e.g. "/a/{id}") that
+// matches is used. The caller must hold mc.mu (read or write).
+func (mc *MockController) findRouteLocked(port int, method, path string) ([]ResponseFuncConfig, map[string]string) {
+	portRoutes, ok := mc.Routes[port]
+	if !ok {
+		return nil, nil
+	}
+	methodRoutes, ok := portRoutes[method]
+	if !ok {
+		return nil, nil
+	}
+	if steps, ok := methodRoutes[path]; ok {
+		return steps, nil
+	}
+
+	patterns := make([]string, 0, len(methodRoutes))
+	for pattern := range methodRoutes {
+		if strings.Contains(pattern, "{") {
+			patterns = append(patterns, pattern)
+		}
+	}
+	sort.Strings(patterns)
+	for _, pattern := range patterns {
+		if params, ok := matchPathPattern(pattern, path); ok {
+			return methodRoutes[pattern], params
+		}
+	}
+	return nil, nil
+}
+
+// matchPathPattern reports whether path matches a route pattern and returns the
+// captured parameters. A pattern segment written as "{name}" matches any single
+// non-empty path segment; all other segments must match literally.
+//
+//	pattern: /a/b/{ee}/c/{dd}
+//	path:    /a/b/hello/c/42  -> {ee: hello, dd: 42}
+func matchPathPattern(pattern, path string) (map[string]string, bool) {
+	patternSegments := splitPath(pattern)
+	pathSegments := splitPath(path)
+	if len(patternSegments) != len(pathSegments) {
+		return nil, false
+	}
+
+	params := make(map[string]string)
+	for i, segment := range patternSegments {
+		actual := pathSegments[i]
+		if len(segment) >= 3 && segment[0] == '{' && segment[len(segment)-1] == '}' {
+			name := segment[1 : len(segment)-1]
+			if actual == "" {
+				return nil, false
+			}
+			params[name] = actual
+			continue
+		}
+		if segment != actual {
+			return nil, false
+		}
+	}
+	return params, true
+}
+
+// splitPath splits a URL path into non-empty segments, ignoring leading and
+// trailing slashes.
+func splitPath(p string) []string {
+	p = strings.Trim(p, "/")
+	if p == "" {
+		return nil
+	}
+	return strings.Split(p, "/")
 }
 
 func (mc *MockController) handleNotFound(w http.ResponseWriter, r *http.Request) {

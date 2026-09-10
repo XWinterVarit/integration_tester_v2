@@ -78,16 +78,18 @@ func (c *DynamicMockClient) ResetAll() error {
 // Generator and Condition Functions Aliases
 
 var (
-	IfRequestHeader          = dm.IfRequestHeader
-	IfRequestJsonBody        = dm.IfRequestJsonBody
-	IfRequestPath            = dm.IfRequestPath
-	IfRequestQuery           = dm.IfRequestQuery
-	IfRequestHeaderSetCase   = dm.IfRequestHeaderSetCase
-	IfRequestJsonBodySetCase = dm.IfRequestJsonBodySetCase
-	IfRequestXmlBody         = dm.IfRequestXmlBody
-	IfRequestXmlBodySetCase  = dm.IfRequestXmlBodySetCase
-	IfRequestPathSetCase     = dm.IfRequestPathSetCase
-	IfRequestQuerySetCase    = dm.IfRequestQuerySetCase
+	IfRequestHeader           = dm.IfRequestHeader
+	IfRequestJsonBody         = dm.IfRequestJsonBody
+	IfRequestPath             = dm.IfRequestPath
+	IfRequestPathParam        = dm.IfRequestPathParam
+	IfRequestPathParamSetCase = dm.IfRequestPathParamSetCase
+	IfRequestQuery            = dm.IfRequestQuery
+	IfRequestHeaderSetCase    = dm.IfRequestHeaderSetCase
+	IfRequestJsonBodySetCase  = dm.IfRequestJsonBodySetCase
+	IfRequestXmlBody          = dm.IfRequestXmlBody
+	IfRequestXmlBodySetCase   = dm.IfRequestXmlBodySetCase
+	IfRequestPathSetCase      = dm.IfRequestPathSetCase
+	IfRequestQuerySetCase     = dm.IfRequestQuerySetCase
 
 	IfDynamicVariable        = dm.IfDynamicVariable
 	IfDynamicVariableSetCase = dm.IfDynamicVariableSetCase
@@ -99,11 +101,12 @@ var (
 	IfRequestJsonType                = dm.IfRequestJsonType
 	IfRequestJsonTypeSetCase         = dm.IfRequestJsonTypeSetCase
 
-	ExtractRequestHeader   = dm.ExtractRequestHeader
-	ExtractRequestJsonBody = dm.ExtractRequestJsonBody
-	ExtractRequestXmlBody  = dm.ExtractRequestXmlBody
-	ExtractRequestPath     = dm.ExtractRequestPath
-	ExtractRequestQuery    = dm.ExtractRequestQuery
+	ExtractRequestHeader    = dm.ExtractRequestHeader
+	ExtractRequestJsonBody  = dm.ExtractRequestJsonBody
+	ExtractRequestXmlBody   = dm.ExtractRequestXmlBody
+	ExtractRequestPath      = dm.ExtractRequestPath
+	ExtractRequestPathParam = dm.ExtractRequestPathParam
+	ExtractRequestQuery     = dm.ExtractRequestQuery
 
 	GenerateRandomString       = dm.GenerateRandomString
 	GenerateRandomInt          = dm.GenerateRandomInt

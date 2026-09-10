@@ -34,6 +34,10 @@ type HandlerExecutor struct {
 	RawBody        []byte
 	ResponseWriter http.ResponseWriter
 
+	// PathParams holds values captured from a parameterized route pattern
+	// such as "/a/b/{ee}/c/{dd}".
+	PathParams map[string]string
+
 	// Response State
 	StatusCode int
 	Body       string
@@ -50,6 +54,18 @@ func NewHandlerExecutor(w http.ResponseWriter, r *http.Request) *HandlerExecutor
 		ResponseWriter: w,
 		StatusCode:     200,
 		Headers:        make(map[string]string),
+	}
+}
+
+// SetPathParams records values captured from a parameterized route pattern and
+// exposes them both to conditions and to templates (e.g. "{{.ee}}").
+func (h *HandlerExecutor) SetPathParams(params map[string]string) {
+	if len(params) == 0 {
+		return
+	}
+	h.PathParams = params
+	for name, value := range params {
+		h.Variables[name] = value
 	}
 }
 
@@ -193,6 +209,16 @@ func (h *HandlerExecutor) handlePrepareData(f ResponseFuncConfig) error {
 		targetVar = fmt.Sprintf("%v", args[2])
 		toBeVal = h.resolveArg(args[3])
 		actualVal = h.Request.URL.Path
+	case FuncIfRequestPathParam:
+		if len(args) < 5 {
+			return nil
+		}
+		paramName := fmt.Sprintf("%v", args[0])
+		condition = fmt.Sprintf("%v", args[1])
+		expectedVal = h.resolveArg(args[2])
+		targetVar = fmt.Sprintf("%v", args[3])
+		toBeVal = h.resolveArg(args[4])
+		actualVal = h.PathParams[paramName]
 	case FuncIfRequestQuery:
 		if len(args) < 5 {
 			return nil
@@ -323,6 +349,20 @@ func (h *HandlerExecutor) handlePrepareData(f ResponseFuncConfig) error {
 		expectedVal = h.resolveArg(args[1])
 		caseStr := fmt.Sprintf("%v", args[2])
 		actualVal = h.Request.URL.Path
+		if h.checkCondition(actualVal, condition, expectedVal) {
+			h.ActiveCase = caseStr
+		}
+		return nil
+
+	case FuncIfRequestPathParamSetCase:
+		if len(args) < 4 {
+			return nil
+		}
+		paramName := fmt.Sprintf("%v", args[0])
+		condition = fmt.Sprintf("%v", args[1])
+		expectedVal = h.resolveArg(args[2])
+		caseStr := fmt.Sprintf("%v", args[3])
+		actualVal = h.PathParams[paramName]
 		if h.checkCondition(actualVal, condition, expectedVal) {
 			h.ActiveCase = caseStr
 		}
@@ -459,6 +499,15 @@ func (h *HandlerExecutor) handlePrepareData(f ResponseFuncConfig) error {
 		}
 		targetVar := fmt.Sprintf("%v", args[0])
 		h.Variables[targetVar] = h.Request.URL.Path
+		return nil
+
+	case FuncExtractRequestPathParam:
+		if len(args) < 2 {
+			return nil
+		}
+		paramName := fmt.Sprintf("%v", args[0])
+		targetVar := fmt.Sprintf("%v", args[1])
+		h.Variables[targetVar] = h.PathParams[paramName]
 		return nil
 
 	case FuncExtractRequestQuery:

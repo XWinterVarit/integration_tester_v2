@@ -123,6 +123,16 @@ func IfRequestPath(condition, value, dynamicVar string, toBeValue interface{}) R
 	}
 }
 
+// IfRequestPathParam evaluates a condition against a value captured from a
+// parameterized route pattern, e.g. /a/b/{ee}/c/{dd} -> param "ee".
+func IfRequestPathParam(param, condition string, value interface{}, dynamicVar string, toBeValue interface{}) ResponseFuncConfig {
+	return ResponseFuncConfig{
+		Group: GroupPrepareData,
+		Func:  FuncIfRequestPathParam,
+		Args:  []interface{}{param, condition, value, dynamicVar, toBeValue},
+	}
+}
+
 func IfRequestQuery(field, condition, value, dynamicVar string, toBeValue interface{}) ResponseFuncConfig {
 	return ResponseFuncConfig{
 		Group: GroupPrepareData,
@@ -160,6 +170,16 @@ func IfRequestPathSetCase(condition, value, caseStr string) ResponseFuncConfig {
 		Group: GroupPrepareData,
 		Func:  FuncIfRequestPathSetCase,
 		Args:  []interface{}{condition, value, caseStr},
+	}
+}
+
+// IfRequestPathParamSetCase routes the response to a case based on a value
+// captured from a parameterized route pattern.
+func IfRequestPathParamSetCase(param, condition string, value interface{}, caseStr string) ResponseFuncConfig {
+	return ResponseFuncConfig{
+		Group: GroupPrepareData,
+		Func:  FuncIfRequestPathParamSetCase,
+		Args:  []interface{}{param, condition, value, caseStr},
 	}
 }
 
@@ -264,6 +284,16 @@ func ExtractRequestPath(dynamicVar string) ResponseFuncConfig {
 		Group: GroupPrepareData,
 		Func:  FuncExtractRequestPath,
 		Args:  []interface{}{dynamicVar},
+	}
+}
+
+// ExtractRequestPathParam stores a value captured from a parameterized route
+// pattern into a dynamic variable.
+func ExtractRequestPathParam(param, dynamicVar string) ResponseFuncConfig {
+	return ResponseFuncConfig{
+		Group: GroupPrepareData,
+		Func:  FuncExtractRequestPathParam,
+		Args:  []interface{}{param, dynamicVar},
 	}
 }
 
