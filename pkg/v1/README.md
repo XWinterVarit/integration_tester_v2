@@ -465,6 +465,76 @@ cd ui && npm install && npm run build
 or point at a built bundle with `IT_UI_DIST`). If Electron is unavailable the
 same UI is served from `ui/dist` in the browser.
 
+#### Choosing the run mode at launch (`run.go`)
+
+Instead of hard-coding `RunGUI(t)`, apps can let the operator pick the mode when
+the binary starts. Register the `-mode` flag before `flag.Parse`, then call
+`Run`:
+
+```go
+func main() {
+    v1.RegisterModeFlag("") // registers -mode (gui | cli | cli-command | server)
+    flag.Parse()
+
+    t := v1.NewTester()
+    // ... register stages ...
+
+    v1.Run(t) // dispatches on CurrentMode()
+}
+```
+
+```bash
+go run . -mode cli            # run every stage, exit non-zero on failure
+go run . -mode cli-command    # interactive stdin command session
+go run . -mode server         # HTTP API + web UI in the browser
+go run . -mode gui            # Electron desktop UI (default)
+
+INTEGRATION_TESTER_MODE=cli go run .   # env var also works (IT_MODE alias)
+```
+
+Helpers:
+
+- `RegisterModeFlag(usage string)` — registers `-mode` on `flag.CommandLine`
+  (default from env, else `gui`). Safe to call more than once.
+- `CurrentMode() string` — resolves the mode from the flag or env, default `gui`.
+- `Run(t)` — dispatch using `CurrentMode()`.
+- `RunWithMode(t, mode)` — dispatch an explicit mode (if the app defines its own flag).
+
+Modes: `ModeGUI`, `ModeCLI`, `ModeCLICommand`, `ModeServer`.
+
+#### CLI command mode for AI/debugging (`cli.go`)
+
+`-mode cli-command` starts an interactive, line-oriented session on stdin/stdout
+designed for an external driver (e.g. an AI agent). Stages run one at a time; the
+session reports progress and rejects overlapping runs.
+
+Commands: `list`, `run <stage>`, `status`, `exit`/`quit`. Every response ends
+with a blank line; a `run` streams events and ends with `PASSED`/`FAILED`.
+
+```text
+RUNNING <stage>
+HEARTBEAT <stage> elapsed=5s still-running
+SLOW <stage> elapsed=1m0s still-running slow-threshold=1m0s
+PASSED <stage> duration=12.3s
+FAILED <stage> duration=3.1s error=...
+BUSY running=<stage> elapsed=... requested=<stage>   # one stage already running
+STATUS RUNNING stage=<stage> elapsed=...
+STATUS IDLE last=<stage> result=PASSED duration=...
+```
+
+Options / environment:
+
+- `RunCLICommandWithOptions(t, CLICommandOptions{Heartbeat, SlowAfter, Timeout})`.
+- `INTEGRATION_TESTER_CLI_HEARTBEAT` — progress interval (default `5s`, `<0` disables).
+- `INTEGRATION_TESTER_CLI_SLOW_AFTER` — slow warning threshold (default `1m`).
+- `INTEGRATION_TESTER_CLI_TIMEOUT` — hard limit (default off; when exceeded the
+  process exits so a stuck stage can never overlap the next one).
+
+Concurrency safety: `Tester.RunStageByName` serializes runs with an internal
+lock, `TryRunStageByName` returns `ErrStageRunning` instead of blocking, and
+`RunningStage()` reports the active stage — so two stages never run at the same
+time in any mode (CLI or UI).
+
 ---
 
 ### How This Package Fits into Integration Tests

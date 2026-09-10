@@ -33,6 +33,8 @@ func waitForServer(url string, timeout time.Duration) error {
 
 func main() {
 	mockUrl := flag.String("mock-url", "http://localhost:9001", "Mock Server Control URL")
+	// Registers -mode (gui | cli | cli-command | server); see v1.Run.
+	v1.RegisterModeFlag("")
 	flag.Parse()
 
 	// Resolve the example app source relative to this file so the build works
@@ -384,5 +386,7 @@ func main() {
 		}
 	})
 
-	v1.RunGUI(t)
+	// Mode is selected at runtime: -mode gui|cli|cli-command|server,
+	// or INTEGRATION_TESTER_MODE / IT_MODE. Defaults to gui.
+	v1.Run(t)
 }

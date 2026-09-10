@@ -1,9 +1,14 @@
 package v1
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
+
+// ErrStageRunning is returned by TryRunStageByName when another stage is
+// already in progress.
+var ErrStageRunning = errors.New("another stage is already running")
 
 // StageFunc represents the function to be executed in a stage.
 type StageFunc func()
@@ -89,6 +94,19 @@ func notifyActionHandlers() {
 type Tester struct {
 	Stages []StageDef
 	mu     sync.Mutex
+	// runMu guarantees that only one stage runs at a time. Stage execution
+	// mutates shared state (currentStage, recorded actions), so overlapping
+	// runs would corrupt it. Callers that need to know a run is in progress
+	// should use TryRunStageByName.
+	runMu sync.Mutex
+}
+
+// RunningStage reports the name of the stage currently executing, or "" when
+// the tester is idle.
+func (t *Tester) RunningStage() string {
+	actionMu.Lock()
+	defer actionMu.Unlock()
+	return currentStage
 }
 
 // NewTester creates a new Tester instance.
@@ -106,8 +124,26 @@ func (t *Tester) Stage(name string, fn StageFunc) {
 }
 
 // RunStageByName runs a specific stage by name.
-// It waits for any in-progress dry run to finish before executing.
-func (t *Tester) RunStageByName(name string) (err error) {
+// It blocks until any currently running stage/dry run completes, so only one
+// stage executes at a time.
+func (t *Tester) RunStageByName(name string) error {
+	// Serialize stage execution: only one stage runs at a time.
+	t.runMu.Lock()
+	defer t.runMu.Unlock()
+	return t.runStageByNameLocked(name)
+}
+
+// TryRunStageByName is like RunStageByName but returns ErrStageRunning instead
+// of waiting when another stage is already running.
+func (t *Tester) TryRunStageByName(name string) error {
+	if !t.runMu.TryLock() {
+		return ErrStageRunning
+	}
+	defer t.runMu.Unlock()
+	return t.runStageByNameLocked(name)
+}
+
+func (t *Tester) runStageByNameLocked(name string) (err error) {
 	// Wait for any ongoing dry run to complete
 	dryRunMu.RLock()
 	defer dryRunMu.RUnlock()
