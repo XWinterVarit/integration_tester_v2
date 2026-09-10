@@ -1,0 +1,429 @@
+### Overview of the `pkg/v1` package
+
+This package provides building blocks for writing integration tests in Go. It helps you:
+
+- Organize tests into **stages**.
+- Record and display **actions** for each stage (especially useful for GUIs or CLIs).
+- Use consistent **assertions** and **logging**.
+- Work with **HTTP**, **databases**, and **external apps** in a test‑friendly way.
+- Integrate with **mocks**, **dynamic mock server**, and **GUI** components.
+
+High‑level architecture:
+
+```text
+Your Tests  -->  Tester  -->  StageFuncs
+    |            |            |
+    |            |            +--> HTTP / DB / App helpers
+    |            |
+    |            +--> Assertions & Logging
+    |
+    +--> (optionally) Dynamic Mock Server & GUI
+```
+
+---
+
+### Stages, Actions, and Dry‑Run (`tester.go`)
+
+Core types:
+
+- `type StageFunc func()` — function to execute for a stage.
+- `type StageDef struct { Name string; Func StageFunc }` — named stage definition.
+- `type Action struct { Summary string; Func func() }` — recorded step inside a stage.
+- `type Tester struct { Stages []StageDef }` — orchestrates stages.
+
+Key functions:
+
+- `NewTester()` — create a new tester.
+- `(*Tester) Stage(name string, fn StageFunc)` — register a stage.
+- `(*Tester) RunStageByName(name string) (err error)` — run a specific stage.
+- `(*Tester) DryRunAll()` — dry‑run all stages.
+- `(*Tester) DryRunStage(s StageDef)` — dry‑run a single stage.
+- `RecordAction(summary string, fn func())` — record an action for the current stage.
+- `GetStageActions(stageName string) []Action` — retrieve recorded actions.
+- `RegisterActionUpdateHandler(fn func())` — subscribe to action updates (for UIs).
+- `IsDryRun() bool` — check whether we are in dry‑run mode.
+
+Stage execution flow:
+
+```text
+RunStageByName("SetupDB")
+  |
+  |-- find StageDef("SetupDB")
+  |
+  |-- set currentStage, enable recording, clear previous actions
+  |
+  |-- log: [Stage] Running Stage: SetupDB
+  |
+  |-- run user StageFunc
+  |      (helpers may call RecordAction(...))
+  |
+  |-- defer+recover:
+         - panic(TestError)  -> stage FAILED with message
+         - other panic       -> stage FAILED (Crash)
+         - no panic          -> stage PASSED
+  |
+  |-- disable recording, clear currentStage
+```
+
+Dry‑run flow:
+
+```text
+DryRunStage(stage)
+  |
+  |-- currentStage = stage.Name
+  |-- isRecording = true
+  |-- isDryRun = true
+  |-- clear actions for this stage
+  |
+  |-- run StageFunc
+  |      (helpers see IsDryRun()==true and usually
+         record actions but skip side‑effects)
+  |
+  |-- recover from any panics
+  |-- reset flags
+```
+
+Example:
+
+```go
+tester := v1.NewTester()
+
+tester.Stage("Setup", func() {
+    db := v1.Connect("sqlite3", ":memory:")
+    _ = db
+
+    v1.RecordAction("Create users table", func() {
+        // real DB work here
+    })
+})
+
+if err := tester.RunStageByName("Setup"); err != nil {
+    t.Fatalf("stage failed: %v", err)
+}
+
+// Discover actions without executing side‑effects
+tester.DryRunAll()
+actions := v1.GetStageActions("Setup")
+```
+
+---
+
+### Assertions and Failures (`assert.go`)
+
+Core pieces:
+
+- `type TestError struct { Message string }` — represents a controlled test failure.
+- `func Fail(format string, args ...interface{})` — log and panic with `TestError`.
+- `func Assert(condition bool, format string, args ...interface{})` — `Fail` if condition is false.
+- `func AssertNoError(err error)` — `Fail` if `err != nil`.
+
+Error flow:
+
+```text
+Assert(cond, msg)
+  if !cond
+    -> Fail(msg)
+         |
+         |-- Log(LogTypeError, "Assertion FAILED", msg)
+         |-- panic(TestError{Message: msg})
+
+RunStageByName
+  |
+  |-- defer recover()
+         - if TestError -> log stage FAILED and return error
+         - else         -> log stage FAILED (Crash) and return error
+```
+
+Usage:
+
+```go
+resp := v1.SendRequest(server.URL)
+v1.Assert(resp.StatusCode == 200, "health check failed, got %d", resp.StatusCode)
+
+err := doSomething()
+v1.AssertNoError(err)
+```
+
+---
+
+### Central Logging (`logger.go`)
+
+All helpers log through a simple central logger.
+
+Types and constants:
+
+- `type LogType string`.
+- `LogTypeStage`, `LogTypeDB`, `LogTypeRequest`, `LogTypeMock`,
+  `LogTypeApp`, `LogTypeExpect`, `LogTypeError`, `LogTypeInfo`.
+- `type LogEntry struct { Type LogType; Summary, Detail string }`.
+- `type LogHandler func(entry LogEntry)` — callback for log consumers.
+
+Functions:
+
+- `RegisterLogHandler(h LogHandler)` — add a handler.
+- `Log(t LogType, summary, detail string)` — log an event and notify handlers.
+- `Logf(t LogType, format string, v ...interface{})` — formatted logging helper.
+
+Data flow:
+
+```text
+Helper (e.g. ExpectStatusCode)
+   -> Logf(LogTypeExpect, "Status Code %d == %d - PASSED", ...)
+        |
+        |-- log.Printf("[Expect] ...")
+        |
+        |-- for each h in logHandlers:
+               h(LogEntry{Type: Expect, Summary: ..., Detail: ...})
+```
+
+Example handler:
+
+```go
+v1.RegisterLogHandler(func(e v1.LogEntry) {
+    fmt.Printf("UI: [%s] %s -- %s\n", e.Type, e.Summary, e.Detail)
+})
+
+v1.Log(v1.LogTypeInfo, "Starting integration tests", "")
+```
+
+---
+
+### HTTP Requests and JSON Expectations (`request.go`)
+
+The `request.go` helpers make HTTP checks concise and test‑friendly.
+
+Core response type:
+
+- `type Response struct { StatusCode int; Body string; Header map[string]string }`
+
+Key functions:
+
+- `SendRequest(url string) Response`
+- `ExpectStatusCode(resp Response, expected int)`
+- `ExpectHeader(resp Response, key, value string)`
+- `ExpectJsonBody(resp Response, expectedJson interface{})`
+- `ExpectJsonBodyField(resp Response, field string, expectedValue interface{})`
+
+Internal helpers (for JSON paths):
+
+- `getValueByPath(body interface{}, path string) (interface{}, error)`
+- `isNumber(v interface{}) bool`
+- `toFloat64(v interface{}) (float64, bool)`
+
+`SendRequest` flow:
+
+```text
+SendRequest(url)
+  |
+  |-- RecordAction("Request: <url>", func() { SendRequest(url) })
+  |-- if IsDryRun(): return empty Response
+  |-- Logf(LogTypeRequest, "Sending GET request to: %s", url)
+  |-- http.Get(url)
+       - on error -> Fail("Request failed: %v", err)
+  |-- read body and headers
+  |-- Log(LogTypeRequest, "Received status ...", "Body: ... Headers: ...")
+  |-- return Response{StatusCode, Body, Header}
+```
+
+`ExpectStatusCode` and `ExpectHeader`:
+
+- Skip in dry‑run mode (`IsDryRun()`).
+- On mismatch, call `Fail(...)` with helpful detail.
+- On success, log `LogTypeExpect` entries.
+
+`ExpectJsonBody`:
+
+- Unmarshals `resp.Body` and `expectedJson` (if string) to `interface{}`.
+- Compares with `reflect.DeepEqual`.
+- On mismatch, calls `Fail` and includes both values in the message.
+
+`ExpectJsonBodyField`:
+
+- Parses `resp.Body` as JSON into `interface{}`.
+- Uses a path like `"a"`, `"b.c"`, `"d[0]"`, or `"users[0].name"`.
+- Extracts the value via `getValueByPath` and compares to `expectedValue`
+  (with numeric type normalization).
+
+JSON path examples:
+
+```text
+Body JSON:
+{
+  "a": 1,
+  "b": { "c": 2 },
+  "d": [3, 4]
+}
+
+Paths:
+  "a"    -> 1
+  "b.c"  -> 2
+  "d[0]" -> 3
+  "d[1]" -> 4
+```
+
+Example usage:
+
+```go
+resp := v1.SendRequest(server.URL)
+
+v1.ExpectStatusCode(resp, 200)
+v1.ExpectHeader(resp, "Content-Type", "application/json")
+v1.ExpectJsonBodyField(resp, "data.user.name", "alice")
+```
+
+---
+
+### Database Helpers (`db.go`)
+
+The DB helpers wrap a SQL database connection with simple operations for tests.
+
+Key concepts:
+
+- `Connect(driver, dsn string) *DBClient` — connect to a DB (e.g. SQLite).
+- `type Field struct { Name, Type string }` — table column definition.
+- `(*DBClient) SetupTable(table string, autoIncrement bool, fields []Field, ...)` — create a table.
+- `(*DBClient) ReplaceData(table string, values []interface{})` — insert or replace rows.
+- `(*DBClient) Update(table string, set map[string]interface{}, where string, args ...interface{})` — update rows.
+- `(*DBClient) CleanTable(table string)` — delete all rows.
+- `(*DBClient) DeleteOne(table, where string, args ...interface{})` — delete a single matching row (safety requires WHERE).
+- `(*DBClient) DeleteWithLimit(table, where string, limit int, args ...interface{})` — delete up to `limit` matching rows (limit<=0 deletes all matches, still requires WHERE). Handles Oracle/Postgres/SQLite differences internally.
+- `(*DBClient) DropTable(table string)` — drop the table.
+- `(*DBClient) Fetch(query string, args ...interface{}) QueryResult` — run a `SELECT` query.
+
+Redis helpers (`redis.go`):
+
+- `ConnectRedis(serverAddr, accessKey string) *RedisClient`
+- `(*RedisClient) Set(key string, value interface{}, ttl time.Duration)`
+- `(*RedisClient) Get(key string) string`
+- `(*RedisClient) Del(keys ...string)`
+- `(*RedisClient) ExpectValue(key, expected string)`
+- `(*RedisClient) FlushAll()`
+
+Redis usage:
+
+```go
+rc := v1.ConnectRedis("http://localhost:9100", "my-access-key")
+rc.Set("foo", "bar", 0)
+rc.ExpectValue("foo", "bar")
+rc.Del("foo")
+rc.FlushAll()
+```
+
+Result wrappers:
+
+- `type QueryResult` — collection of rows
+  - `Count() int`
+  - `GetRow(i int) RowResult`
+- `type RowResult` — single row
+  - `Get(column string) interface{}`
+  - `Expect(column string, expected interface{})` — assert value.
+
+Typical usage:
+
+```go
+db := v1.Connect("sqlite3", ":memory:")
+fields := []v1.Field{{"id", "INTEGER PRIMARY KEY AUTOINCREMENT"}, {"name", "TEXT"}}
+db.SetupTable("users", true, fields, nil)
+
+db.ReplaceData("users", []interface{}{1, "Alice"})
+
+result := db.Fetch("SELECT name FROM users WHERE id = ?", 1)
+row := result.GetRow(0)
+row.Expect("name", "Alice")
+
+db.CleanTable("users")
+db.DeleteOne("users", "id = ?", 1)
+db.DeleteWithLimit("users", "name = ?", 10, "Alice")
+db.DropTable("users")
+```
+
+Errors from the underlying DB usually trigger `Fail(...)`, which panics and is
+then caught at a higher level (for example by `RunStageByName`).
+
+---
+
+### External Application Runner (`app.go`)
+
+`app.go` lets you start and stop external processes (services under test).
+
+Types and functions:
+
+- `type AppServer struct { cmd *exec.Cmd }` — wraps a running process.
+- `func RunAppServer(path string, args ...string) *AppServer`
+- `func (s *AppServer) Stop()`
+
+Flow:
+
+```text
+RunAppServer(path, args...)
+  |
+  |-- RecordAction("App Run: path", func() { RunAppServer(path, args...) })
+  |-- if IsDryRun(): return &AppServer{}
+  |-- exec.Command(path, args...)
+  |-- pipe stdout/stderr to os.Stdout/os.Stderr
+  |-- Logf(LogTypeApp, "Starting Server: ...")
+  |-- if cmd.Start() fails -> Fail("Failed to start server: %v", err)
+  |-- return &AppServer{cmd}
+
+AppServer.Stop()
+  |
+  |-- if cmd and cmd.Process are non‑nil:
+        - Log(LogTypeApp, "Stopping Server", "")
+        - Kill process
+        - Wait for it (release resources)
+```
+
+Example:
+
+```go
+app := v1.RunAppServer("./my_service", "--port", "8080")
+// ... run checks against the service ...
+app.Stop()
+```
+
+In dry‑run mode this only records the action, it does not actually start a process.
+
+---
+
+### Mocks, Dynamic Mocks, Models, and GUI (`mock.go`, `dynamic_mock.go`, `model.go`, `gui.go`)
+
+These files connect the core tester with mocks and GUI integrations.
+
+At a high level they:
+
+- Provide in‑memory mock behaviors (e.g. for services you call during stages).
+- Bridge to the **dynamic mock server** from `pkg/dynamic-mock-server`.
+- Define simple data models for stages, actions, and logs that a GUI can display.
+- Register log and action handlers that keep the GUI in sync with test execution.
+
+Conceptual diagram:
+
+```text
+ Tester            Logger             Stage/Actions           GUI
+   |                |                     |                    |
+   | RunStage       | Log()               | RecordAction()     |
+   |--------------->|-------------------->|------------------->|
+   |                |                     |                    |
+   |                | RegisterLogHandler  | RegisterAction...  |
+   |<---------------------------------------------------------|
+           (GUI subscribes and redraws views on updates)
+```
+
+---
+
+### How This Package Fits into Integration Tests
+
+Typical usage pattern:
+
+```text
+Your integration tests
+  |
+  +--> v1.Tester stages
+  |      +--> HTTP, DB, App helpers
+  |
+  +--> (optionally) dynamic mock server
+          +--> configure mock HTTP endpoints for dependencies
+```
+
+Use this package when you want structured stages, consistent logging, and clear
+assertions around HTTP, DB, and external processes in your Go integration tests.

@@ -1,0 +1,96 @@
+write mock server
+that can dynamically register routes via resp api
+
+features: provide resp api for
+APIs
+    api using REST and call via network, but please provide go library for client to use by call function instead of construct http call manually.
+    this lib will handle all calling by itself.
+
+- register routes dynamically: if same port and route, just replace, and notify in api response
+    example: RegisterRoute(port, method, path, responseFunc[])
+- reset port and all routes under port (with waiting)
+- reset all (with waiting)
+
+
+NonAPIs
+- write easy to read but details json log for
+    - registering and reset part and
+    - realtime request response handling.
+  with no fear to waste disk space. log should contain timing, and time usage.
+
+
+
+======================================
+response Func template "Concept": run one by one : you can add more features if it good. please edit based on what best
+
+group: PrepareData
+- IfRequestHeader(HeaderName, Condition, Value, DynamicVariable, toBeValue)
+    example: IfRequestHeader("Authorization", dynamicMock.ConditionEqual, "Bearer 123", "VAR_A", 123.435)
+- IfRequestJsonBody(Field, Condition, Value, DynamicVariable, toBeValue)
+    Field for example:  a.b.c, a[0].b.c
+    dynamicVariable keep in map[string]interface{} lifetime on each request
+- IfRequestPath(Condition, Value, DynamicVariable, toBeValue)
+- IfRequestQuery(Field, Condition, Value, DynamicVariable, toBeValue) // in case of url has query params
+
+group: Generator
+- GenerateRandomString(length, toDynamicVariable)
+- GenerateRandomInt(min, max, toDynamicVariable)
+- GenerateRandomIntFixLength(length, toDynamicVariable)
+- GenerateRandomDecimal(min, max, max_decimal, toDynamicVariable)
+- HashedString(fromDynamicVariable, HashAlgorithm, toDynamicVariable)
+
+group: DynamicVariable
+- ConvertToString(dynamicVariable)
+- ConvertToInt(dynamicVariable)
+- Delete(dynamicVariable)
+
+group: SetupResponse
+- SetJsonBody(jsonBody)
+   example with dynamic variable: SetJsonBody(`{"a": {{.VAR_A}}}`)  // please try to find best way to write template inside data, in this sample is {{}} but if there is betterway please use it
+- SetStatusCode(statusCode)
+- SetWait(timeout)
+- SetRandomWait(min, max)
+- SetMethod(method)
+- SetHeader(key, value)
+- CopyHeaderFromRequest(key)
+
+
+======================================
+Concept of Registering Route:
+
+Client Raw Call
+POST /registerRoute
+{
+    "port": 8080,
+    "method": "POST",
+    "path": "/api/v1/test",
+    "responseFunc": [
+        {
+            "group": "PrepareData",
+            "func": "IfRequestHeader",
+            "args": ["Authorization", "Equal", "Bearer 123", "VAR_A", 123.435]
+        },
+        {
+            "group": "Generator",
+            "func": "GenerateRandomString",
+            "args": [10 ,"VAR_A"]
+        },
+        {
+            "group": "SetupResponse",
+            "func": "SetJsonBody",
+            "args": {
+                "\{"a": {{.VAR_A}}}\"
+            }
+        }
+    ]
+}
+
+but if use via Library, it will be:
+
+RegisterRoute(8080, "POST", "/api/v1/test", []ResponseFunc{
+    IfRequestHeader("Authorization", dynamicMock.ConditionEqual, "Bearer 123", "VAR_A", 123.435),
+    GenerateRandomString(10 ,"VAR_A"),
+    SetJsonBody(`{"a": {{.VAR_A}}}`),
+})
+
+something like this.
