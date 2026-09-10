@@ -1,5 +1,7 @@
 package dynamic_mock_server
 
+import "github.com/XWinterVarit/integrate_tester_v2/pkg/condition"
+
 // ResponseFuncConfig represents the JSON structure for a response function configuration
 type ResponseFuncConfig struct {
 	Group string        `json:"group"`
@@ -81,16 +83,23 @@ const (
 	FuncCopyHeaderFromRequest = "CopyHeaderFromRequest"
 )
 
-// Conditions
+// Conditions are re-exported from pkg/condition so existing callers can keep
+// using dynamic_mock_server.ConditionEqual, etc. Matching uses the same strict
+// engine as pkg/v1 assertions.
 const (
-	ConditionEqual              = "Equal"
-	ConditionNotEqual           = "NotEqual"
-	ConditionContains           = "Contains"
-	ConditionNotContains        = "NotContains"
-	ConditionStartsWith         = "StartsWith"
-	ConditionEndsWith           = "EndsWith"
-	ConditionGreaterThan        = "GreaterThan"
-	ConditionLessThan           = "LessThan"
-	ConditionGreaterThanOrEqual = "GreaterThanOrEqual"
-	ConditionLessThanOrEqual    = "LessThanOrEqual"
+	ConditionEqual              = condition.Equal
+	ConditionNotEqual           = condition.NotEqual
+	ConditionContains           = condition.Contains
+	ConditionNotContains        = condition.NotContains
+	ConditionStartsWith         = condition.StartsWith
+	ConditionEndsWith           = condition.EndsWith
+	ConditionGreaterThan        = condition.GreaterThan
+	ConditionLessThan           = condition.LessThan
+	ConditionGreaterThanOrEqual = condition.GreaterThanOrEqual
+	ConditionLessThanOrEqual    = condition.LessThanOrEqual
+	ConditionMatches            = condition.Matches
+	ConditionIn                 = condition.In
+	ConditionNotIn              = condition.NotIn
+	ConditionEmpty              = condition.Empty
+	ConditionNotEmpty           = condition.NotEmpty
 )

@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	cond "github.com/XWinterVarit/integrate_tester_v2/pkg/condition"
 )
 
 // SendRESTRequest sends an HTTP request with flexible options.
@@ -250,12 +252,17 @@ func ExpectStatusCode(resp Response, expected int) {
 	Logf(LogTypeExpect, "Status Code %d == %d - PASSED", resp.StatusCode, expected)
 }
 
-// ExpectHeader asserts that the response has the expected header.
+// ExpectHeader asserts that the response has the expected header. Header names
+// are matched case-insensitively.
 func ExpectHeader(resp Response, key, value string) {
 	if IsDryRun() {
 		return
 	}
-	if got, ok := resp.Header[key]; !ok || got != value {
+	got, ok := resp.Header[http.CanonicalHeaderKey(key)]
+	if !ok {
+		Fail("ExpectHeader failed: header %q not present (expected %q)", key, value)
+	}
+	if got != value {
 		Fail("ExpectHeader failed: expected %s=%s, got %s", key, value, got)
 	}
 	Logf(LogTypeExpect, "Header '%s' == '%s' - PASSED", key, value)
@@ -282,7 +289,7 @@ func ExpectJsonBody(resp Response, expectedJson interface{}) {
 		expected = expectedJson
 	}
 
-	if !reflect.DeepEqual(got, expected) {
+	if !cond.Evaluate(got, cond.Equal, normalizeJSONValue(expected)) {
 		Fail("ExpectJsonBody failed:\nExpected: %v\nGot:      %v", expected, got)
 	}
 	Log(LogTypeExpect, "JSON body matches expected value - PASSED", "")
@@ -329,6 +336,12 @@ func ExpectJsonBodyField(resp Response, field string, expectedValue interface{})
 func ExpectJsonBodyFieldCond(resp Response, field string, condition string, expectedValue interface{}) {
 	if IsDryRun() {
 		return
+	}
+	if err := ValidateCondition(condition); err != nil {
+		Fail("ExpectJsonBodyFieldCond failed: %v", err)
+	}
+	if err := validateExpected(condition, expectedValue); err != nil {
+		Fail("ExpectJsonBodyFieldCond failed: %v", err)
 	}
 
 	var body interface{}
@@ -512,26 +525,11 @@ func setValueByPath(data interface{}, path string, value interface{}) error {
 }
 
 func isNumber(i interface{}) bool {
-	switch i.(type) {
-	case int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64,
-		float32, float64:
-		return true
-	}
-	return false
+	return cond.IsNumber(i)
 }
 
 func toFloat64(i interface{}) float64 {
-	v := reflect.ValueOf(i)
-	switch v.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(v.Int())
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(v.Uint())
-	case reflect.Float32, reflect.Float64:
-		return v.Float()
-	}
-	return 0
+	return cond.ToFloat64(i)
 }
 
 // xmlNode represents a parsed XML element for path-based queries.
@@ -726,6 +724,12 @@ func ExpectXmlBodyField(resp Response, field string, expectedValue string) {
 func ExpectXmlBodyFieldCond(resp Response, field string, condition string, expectedValue string) {
 	if IsDryRun() {
 		return
+	}
+	if err := ValidateCondition(condition); err != nil {
+		Fail("ExpectXmlBodyFieldCond failed: %v", err)
+	}
+	if err := validateExpected(condition, expectedValue); err != nil {
+		Fail("ExpectXmlBodyFieldCond failed: %v", err)
 	}
 	root := parseXMLToNode([]byte(resp.Body))
 	if root == nil {

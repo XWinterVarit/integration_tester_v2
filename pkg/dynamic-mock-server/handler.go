@@ -15,6 +15,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/XWinterVarit/integrate_tester_v2/pkg/condition"
 )
 
 // HandlerExecutor executes the response functions
@@ -527,41 +529,10 @@ func (h *HandlerExecutor) handlePrepareData(f ResponseFuncConfig) error {
 	return nil
 }
 
-func (h *HandlerExecutor) checkCondition(actual interface{}, cond string, expected interface{}) bool {
-	actStr := fmt.Sprintf("%v", actual)
-	expStr := fmt.Sprintf("%v", expected)
-
-	switch cond {
-	case ConditionEqual:
-		return actStr == expStr
-	case ConditionNotEqual:
-		return actStr != expStr
-	case ConditionContains:
-		return strings.Contains(actStr, expStr)
-	case ConditionNotContains:
-		return !strings.Contains(actStr, expStr)
-	case ConditionStartsWith:
-		return strings.HasPrefix(actStr, expStr)
-	case ConditionEndsWith:
-		return strings.HasSuffix(actStr, expStr)
-	case ConditionGreaterThan, ConditionLessThan, ConditionGreaterThanOrEqual, ConditionLessThanOrEqual:
-		actNum, ok1 := tryToFloat(actual)
-		expNum, ok2 := tryToFloat(expected)
-		if !ok1 || !ok2 {
-			return false
-		}
-		switch cond {
-		case ConditionGreaterThan:
-			return actNum > expNum
-		case ConditionLessThan:
-			return actNum < expNum
-		case ConditionGreaterThanOrEqual:
-			return actNum >= expNum
-		case ConditionLessThanOrEqual:
-			return actNum <= expNum
-		}
-	}
-	return false
+// checkCondition delegates to the shared strict condition engine so mock
+// matching and v1 assertions share identical semantics.
+func (h *HandlerExecutor) checkCondition(actual interface{}, conditionName string, expected interface{}) bool {
+	return condition.Evaluate(actual, conditionName, expected)
 }
 
 func parseXML(data []byte) *XMLNode {
@@ -858,27 +829,6 @@ func (h *HandlerExecutor) handleSetupResponse(f ResponseFuncConfig) error {
 }
 
 // Utils
-
-func tryToFloat(i interface{}) (float64, bool) {
-	if i == nil {
-		return 0, false
-	}
-	switch v := i.(type) {
-	case float64:
-		return v, true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case string:
-		f, err := strconv.ParseFloat(v, 64)
-		return f, err == nil
-	}
-	// Try parsing string representation
-	s := fmt.Sprintf("%v", i)
-	f, err := strconv.ParseFloat(s, 64)
-	return f, err == nil
-}
 
 func toFloat(i interface{}) float64 {
 	switch v := i.(type) {

@@ -80,6 +80,11 @@ Defines the data structures exchanged between client and server, for example:
 These structs usually have JSON tags so they can be serialized/deserialized
 on the wire.
 
+Condition evaluation is shared with `pkg/condition` (also used by `pkg/v1`
+assertions) and is **strict**: typed equality with numeric normalization,
+numeric strings accepted for ordering, plus `Matches`, `In`/`NotIn`, and
+`Empty`/`NotEmpty`. See the `pkg/v1` README for the full semantics.
+
 #### `logger.go`
 
 Implements a small logging helper used only inside this package. It is

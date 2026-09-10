@@ -1,66 +1,88 @@
 package v1
 
 import (
+	"encoding/json"
 	"fmt"
-	"reflect"
-	"strings"
+
+	cond "github.com/XWinterVarit/integrate_tester_v2/pkg/condition"
 )
 
-// evaluateCondition compares actual and expected according to the provided condition constant.
-// It supports numeric comparisons, string comparisons (including contains/prefix/suffix),
-// equality/non-equality, and nil (JSON null/DB NULL) handling.
+// Condition names, re-exported from pkg/condition so callers can keep using
+// v1.ConditionEqual, v1.ConditionContains, etc.
+const (
+	ConditionEqual              = cond.Equal
+	ConditionNotEqual           = cond.NotEqual
+	ConditionContains           = cond.Contains
+	ConditionNotContains        = cond.NotContains
+	ConditionStartsWith         = cond.StartsWith
+	ConditionEndsWith           = cond.EndsWith
+	ConditionGreaterThan        = cond.GreaterThan
+	ConditionLessThan           = cond.LessThan
+	ConditionGreaterThanOrEqual = cond.GreaterThanOrEqual
+	ConditionLessThanOrEqual    = cond.LessThanOrEqual
+	ConditionMatches            = cond.Matches
+	ConditionIn                 = cond.In
+	ConditionNotIn              = cond.NotIn
+	ConditionEmpty              = cond.Empty
+	ConditionNotEmpty           = cond.NotEmpty
+)
+
+// ValidateCondition returns an error when condition is not recognised, listing
+// the supported names. Use it to fail fast on typos instead of silently
+// treating them as "no match".
+func ValidateCondition(condition string) error {
+	return cond.Validate(condition)
+}
+
+// evaluateCondition is the shared strict condition evaluator (pkg/condition).
 func evaluateCondition(actual interface{}, condition string, expected interface{}) bool {
-	switch condition {
-	case ConditionEqual:
-		return valuesEqual(actual, expected)
-	case ConditionNotEqual:
-		return !valuesEqual(actual, expected)
-	case ConditionGreaterThan:
-		return compareNumbers(actual, expected, func(a, b float64) bool { return a > b })
-	case ConditionLessThan:
-		return compareNumbers(actual, expected, func(a, b float64) bool { return a < b })
-	case ConditionGreaterThanOrEqual:
-		return compareNumbers(actual, expected, func(a, b float64) bool { return a >= b })
-	case ConditionLessThanOrEqual:
-		return compareNumbers(actual, expected, func(a, b float64) bool { return a <= b })
-	case ConditionContains:
-		return stringContains(actual, expected, func(a, b string) bool { return strings.Contains(a, b) })
-	case ConditionNotContains:
-		return stringContains(actual, expected, func(a, b string) bool { return !strings.Contains(a, b) })
-	case ConditionStartsWith:
-		return stringContains(actual, expected, func(a, b string) bool { return strings.HasPrefix(a, b) })
-	case ConditionEndsWith:
-		return stringContains(actual, expected, func(a, b string) bool { return strings.HasSuffix(a, b) })
-	default:
-		return false
-	}
+	return cond.Evaluate(actual, condition, expected)
 }
 
-func valuesEqual(a, b interface{}) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-
-	if isNumber(a) && isNumber(b) {
-		return toFloat64(a) == toFloat64(b)
-	}
-
-	return reflect.DeepEqual(a, b)
+func validateExpected(condition string, expected interface{}) error {
+	return cond.ValidateExpected(condition, expected)
 }
 
-func compareNumbers(a, b interface{}, cmp func(float64, float64) bool) bool {
-	if a == nil || b == nil {
-		return false
+// AssertCondition asserts that actual satisfies condition against expected,
+// using the same semantics as the Expect* helpers. format/args build the failure
+// message; when omitted a default message is used.
+func AssertCondition(actual interface{}, condition string, expected interface{}, format string, args ...interface{}) {
+	if IsDryRun() {
+		return
 	}
-	if isNumber(a) && isNumber(b) {
-		return cmp(toFloat64(a), toFloat64(b))
+	if err := ValidateCondition(condition); err != nil {
+		Fail("AssertCondition failed: %v", err)
 	}
-	return false
+	if err := validateExpected(condition, expected); err != nil {
+		Fail("AssertCondition failed: %v", err)
+	}
+	if !evaluateCondition(actual, condition, expected) {
+		msg := ""
+		if format != "" {
+			msg = fmt.Sprintf(format, args...)
+		}
+		if msg != "" {
+			Fail("AssertCondition failed: %s\nActual: %v (%T)\nExpected: %v (%T) [%s]", msg, actual, actual, expected, expected, condition)
+		}
+		Fail("AssertCondition failed:\nActual: %v (%T)\nExpected: %v (%T) [%s]", actual, actual, expected, expected, condition)
+	}
+	Logf(LogTypeExpect, "Condition %s %v - PASSED", condition, expected)
 }
 
-func stringContains(a, b interface{}, cmp func(string, string) bool) bool {
-	if a == nil || b == nil {
-		return false
+// normalizeJSONValue round-trips v through JSON so that native Go values (ints,
+// structs, ...) are converted to the same float64/map/slice representation that
+// json.Unmarshal produces.
+func normalizeJSONValue(v interface{}) interface{} {
+	if _, isJSONNumber := v.(json.Number); isJSONNumber {
+		return v
 	}
-	return cmp(fmt.Sprintf("%v", a), fmt.Sprintf("%v", b))
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out interface{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return v
+	}
+	return out
 }

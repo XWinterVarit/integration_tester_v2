@@ -144,6 +144,28 @@ err := doSomething()
 v1.AssertNoError(err)
 ```
 
+#### Conditions and `AssertCondition`
+
+Condition-based assertions (`ExpectJsonBodyFieldCond`, `ExpectXmlBodyFieldCond`,
+`RowResult.ExpectCond`, ...) and `AssertCondition` all use one strict evaluator in
+`pkg/condition`, which is also used by the dynamic mock server's request matching.
+Supported conditions:
+
+- equality: `ConditionEqual`, `ConditionNotEqual`
+- ordering: `ConditionGreaterThan`, `ConditionLessThan`, `ConditionGreaterThanOrEqual`, `ConditionLessThanOrEqual`
+- text: `ConditionContains`, `ConditionNotContains`, `ConditionStartsWith`, `ConditionEndsWith`, `ConditionMatches` (regex)
+- collections: `ConditionIn`, `ConditionNotIn`
+- presence: `ConditionEmpty`, `ConditionNotEmpty`
+
+Semantics are typed/strict: numeric values (int/uint/float/`json.Number`) compare
+by value and maps/slices compare recursively; numeric strings are accepted for
+ordering; equality does **not** stringify (`"1"` is not equal to `1`). Unknown
+condition names fail fast.
+
+```go
+v1.AssertCondition(resp.StatusCode, v1.ConditionIn, []interface{}{200, 201}, "unexpected status")
+```
+
 ---
 
 ### Central Logging (`logger.go`)

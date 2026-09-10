@@ -14,20 +14,6 @@ type DynamicMockClient struct {
 // ResponseFuncConfig aliases the configuration struct from dynamic-mock-server.
 type ResponseFuncConfig = dm.ResponseFuncConfig
 
-// Constants for Conditions
-const (
-	ConditionEqual              = dm.ConditionEqual
-	ConditionNotEqual           = dm.ConditionNotEqual
-	ConditionContains           = dm.ConditionContains
-	ConditionNotContains        = dm.ConditionNotContains
-	ConditionStartsWith         = dm.ConditionStartsWith
-	ConditionEndsWith           = dm.ConditionEndsWith
-	ConditionGreaterThan        = dm.ConditionGreaterThan
-	ConditionLessThan           = dm.ConditionLessThan
-	ConditionGreaterThanOrEqual = dm.ConditionGreaterThanOrEqual
-	ConditionLessThanOrEqual    = dm.ConditionLessThanOrEqual
-)
-
 // NewDynamicMockClient creates a new client for an existing dynamic mock server.
 // controlURL is the base URL of the mock controller (e.g., "http://localhost:8888").
 func NewDynamicMockClient(controlURL string) *DynamicMockClient {
