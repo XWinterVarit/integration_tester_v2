@@ -6,7 +6,7 @@ This package provides building blocks for writing integration tests in Go. It he
 - Record and display **actions** for each stage (especially useful for GUIs or CLIs).
 - Use consistent **assertions** and **logging**.
 - Work with **HTTP**, **databases**, and **external apps** in a test‑friendly way.
-- Integrate with **mocks**, **dynamic mock server**, and **GUI** components.
+- Integrate with **mocks**, **dynamic mock server**, and an **Electron + React UI**.
 
 High‑level architecture:
 
@@ -385,29 +385,63 @@ In dry‑run mode this only records the action, it does not actually start a pro
 
 ---
 
-### Mocks, Dynamic Mocks, Models, and GUI (`mock.go`, `dynamic_mock.go`, `model.go`, `gui.go`)
+### Mocks, Dynamic Mocks, Models, and the UI (`mock.go`, `dynamic_mock.go`, `model.go`, `serve.go`)
 
-These files connect the core tester with mocks and GUI integrations.
+These files connect the core tester with mocks and the UI integrations.
 
 At a high level they:
 
 - Provide in‑memory mock behaviors (e.g. for services you call during stages).
 - Bridge to the **dynamic mock server** from `pkg/dynamic-mock-server`.
-- Define simple data models for stages, actions, and logs that a GUI can display.
-- Register log and action handlers that keep the GUI in sync with test execution.
+- Define simple data models for stages, actions, and logs that the UI can display.
+- Register log and action handlers that keep the UI in sync with test execution.
 
 Conceptual diagram:
 
 ```text
- Tester            Logger             Stage/Actions           GUI
+ Tester            Logger             Stage/Actions        Electron UI
    |                |                     |                    |
    | RunStage       | Log()               | RecordAction()     |
    |--------------->|-------------------->|------------------->|
    |                |                     |                    |
    |                | RegisterLogHandler  | RegisterAction...  |
    |<---------------------------------------------------------|
-           (GUI subscribes and redraws views on updates)
+           (server pushes logs/status over SSE; UI redraws)
 ```
+
+#### Desktop / Web UI (`serve.go` + `ui/`)
+
+The UI is an **Electron + React** app that talks to a small HTTP/SSE server
+implemented in `serve.go`. The Go test process stays in charge of running
+stages; the UI only sends commands and renders state.
+
+- `NewUIServer(t) *UIServer` — create the server for a `*Tester`.
+- `(*UIServer) Start() error` / `Stop()` — bind a free localhost port and serve.
+- `(*UIServer) URL() string` — base URL (e.g. `http://127.0.0.1:54321`).
+- `RunGUI(t)` — start the server and launch Electron (falls back to the browser).
+- `RunServer(t)` — start the server and open the browser only.
+
+HTTP API:
+
+```text
+GET  /api/state         -> { stages: [{name, status, actions}], logs: [...] }
+GET  /api/events        -> server-sent events: state | log | stage | refresh | error
+POST /api/stage/run     -> { name, runPrerequisites }
+POST /api/action/run    -> { stage, index }
+POST /api/run-all       -> {}
+POST /api/discover      -> {}   (dry-run to populate actions)
+```
+
+The React sources live in `ui/src`; Electron entry points in `ui/electron`.
+Build the frontend once with:
+
+```bash
+cd ui && npm install && npm run build
+```
+
+`RunGUI` then finds `ui/` automatically (override with `INTEGRATION_TESTER_UI`,
+or point at a built bundle with `IT_UI_DIST`). If Electron is unavailable the
+same UI is served from `ui/dist` in the browser.
 
 ---
 

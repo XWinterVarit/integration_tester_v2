@@ -23,9 +23,9 @@ const (
 
 // LogEntry represents a single log event.
 type LogEntry struct {
-	Type    LogType
-	Summary string
-	Detail  string
+	Type    LogType `json:"type"`
+	Summary string  `json:"summary"`
+	Detail  string  `json:"detail"`
 }
 
 // LogHandler is a function that handles log entries (e.g., UI updater).
@@ -62,7 +62,7 @@ func Log(t LogType, summary string, detail string) {
 	logMu.Lock()
 	defer logMu.Unlock()
 	for _, h := range logHandlers {
-		// Call handler directly. Handlers should handle concurrency (e.g. fyne.Do)
+		// Call handler directly. Handlers must be safe for concurrent use.
 		h(entry)
 	}
 }
