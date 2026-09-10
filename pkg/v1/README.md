@@ -1,5 +1,10 @@
 ### Overview of the `pkg/v1` package
 
+> **New to the library?** Start with the task-oriented guide in
+> [`docs/`](docs/README.md) — it covers designing a test flow, assertions,
+> HTTP/DB/Redis helpers, mocks, run modes, and an AI-agent guide for the CLI
+> command mode. This README is the API-level reference.
+
 This package provides building blocks for writing integration tests in Go. It helps you:
 
 - Organize tests into **stages**.
