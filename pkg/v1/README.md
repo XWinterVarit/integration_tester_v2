@@ -445,12 +445,21 @@ stages; the UI only sends commands and renders state.
 - `NewUIServer(t) *UIServer` — create the server for a `*Tester`.
 - `(*UIServer) Start() error` / `Stop()` — bind a free localhost port and serve.
 - `(*UIServer) URL() string` — base URL (e.g. `http://127.0.0.1:54321`).
+- `(*UIServer) Token() string` / `URLWithToken() string` — per-process auth token.
 - `RunGUI(t)` — start the server and launch Electron (falls back to the browser).
 - `RunServer(t)` — start the server and open the browser only.
+
+The API is **authenticated**: every request except `GET /api/health` must carry
+the per-process token, either as `Authorization: Bearer <token>`, as an
+`X-IT-Token` header, or as a `?token=` query parameter (needed for `EventSource`).
+The token is generated on startup and injected into the UI automatically, so
+`RunGUI` / `RunServer` remain zero-config. To open the UI manually, use
+`URLWithToken()`.
 
 HTTP API:
 
 ```text
+GET  /api/health        -> { status: "ok" }   (no token required)
 GET  /api/state         -> { stages: [{name, status, actions}], logs: [...] }
 GET  /api/events        -> server-sent events: state | log | stage | refresh | error
 POST /api/stage/run     -> { name, runPrerequisites }

@@ -20,6 +20,15 @@ func startUITestServer(t *testing.T, tester *Tester) *UIServer {
 	return srv
 }
 
+// authURL builds a server URL with the server's token when path is an API route.
+func authURL(srv *UIServer, path string) string {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return srv.URL() + path + sep + "token=" + srv.Token()
+}
+
 func postJSON(t *testing.T, url string, body interface{}) *http.Response {
 	t.Helper()
 	data, _ := json.Marshal(body)
@@ -42,6 +51,35 @@ func waitFor(t *testing.T, timeout time.Duration, check func() bool) bool {
 	return false
 }
 
+func TestUIServerRejectsUnauthenticated(t *testing.T) {
+	tester := NewTester()
+	tester.Stage("Setup", func() {})
+
+	srv := startUITestServer(t, tester)
+
+	resp, err := http.Get(srv.URL() + "/api/state")
+	if err != nil {
+		t.Fatalf("state request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", resp.StatusCode)
+	}
+
+	if _, err := http.Get(srv.URL() + "/api/health"); err != nil {
+		t.Fatalf("health request failed: %v", err)
+	}
+
+	resp2, err := http.Get(authURL(srv, "/api/state"))
+	if err != nil {
+		t.Fatalf("authenticated state request failed: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with token, got %d", resp2.StatusCode)
+	}
+}
+
 func TestUIServerState(t *testing.T) {
 	tester := NewTester()
 	tester.Stage("Setup", func() {})
@@ -49,7 +87,7 @@ func TestUIServerState(t *testing.T) {
 
 	srv := startUITestServer(t, tester)
 
-	resp, err := http.Get(srv.URL() + "/api/state")
+	resp, err := http.Get(authURL(srv, "/api/state"))
 	if err != nil {
 		t.Fatalf("state request failed: %v", err)
 	}
@@ -81,14 +119,14 @@ func TestUIServerDiscoverAndRunStage(t *testing.T) {
 
 	srv := startUITestServer(t, tester)
 
-	postJSON(t, srv.URL()+"/api/discover", map[string]any{}).Body.Close()
+	postJSON(t, authURL(srv, "/api/discover"), map[string]any{}).Body.Close()
 	if !waitFor(t, 2*time.Second, func() bool {
 		return len(GetStageActions("Setup")) == 1
 	}) {
 		t.Fatal("discover did not record actions")
 	}
 
-	postJSON(t, srv.URL()+"/api/stage/run", map[string]any{"name": "Setup"}).Body.Close()
+	postJSON(t, authURL(srv, "/api/stage/run"), map[string]any{"name": "Setup"}).Body.Close()
 	if !waitFor(t, 2*time.Second, func() bool {
 		return srv.getStatus("Setup") == "PASSED"
 	}) {
@@ -113,7 +151,7 @@ func TestUIServerRunAction(t *testing.T) {
 		t.Fatalf("run stage: %v", err)
 	}
 
-	postJSON(t, srv.URL()+"/api/action/run", map[string]any{"stage": "Setup", "index": 0}).Body.Close()
+	postJSON(t, authURL(srv, "/api/action/run"), map[string]any{"stage": "Setup", "index": 0}).Body.Close()
 
 	select {
 	case <-executed:
@@ -128,7 +166,7 @@ func TestUIServerEventsStreamsState(t *testing.T) {
 
 	srv := startUITestServer(t, tester)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/api/events", nil)
+	req, _ := http.NewRequest(http.MethodGet, authURL(srv, "/api/events"), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("events request failed: %v", err)

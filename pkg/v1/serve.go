@@ -2,11 +2,15 @@ package v1
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,6 +21,10 @@ import (
 	"syscall"
 	"time"
 )
+
+// localTokenHeader is an alternative to the Authorization header for clients
+// (like EventSource) that cannot set custom request headers.
+const localTokenHeader = "X-IT-Token"
 
 // actionPayload is the JSON representation of a recorded Action.
 type actionPayload struct {
@@ -55,6 +63,7 @@ type UIServer struct {
 	listener net.Listener
 	addr     string
 	uiDir    string
+	token    string
 
 	mu      sync.Mutex
 	runMu   sync.Mutex
@@ -80,6 +89,7 @@ func NewUIServer(t *Tester) *UIServer {
 		status:  status,
 		clients: make(map[chan []byte]struct{}),
 		uiDir:   resolveUIDir(),
+		token:   randomToken(),
 	}
 }
 
@@ -102,7 +112,7 @@ func (s *UIServer) Start() error {
 	mux.HandleFunc("POST /api/discover", s.handleDiscover)
 	mux.Handle("/", s.staticHandler())
 
-	s.httpSrv = &http.Server{Handler: withCORS(mux)}
+	s.httpSrv = &http.Server{Handler: s.withCORS(s.requireAuth(mux))}
 	registerServer(s)
 
 	go func() {
@@ -116,6 +126,52 @@ func (s *UIServer) Start() error {
 // URL returns the base URL the server is listening on.
 func (s *UIServer) URL() string {
 	return "http://" + s.addr
+}
+
+// Token returns the per-process auth token required by the API. It is handed to
+// the UI automatically when the server launches Electron or the browser.
+func (s *UIServer) Token() string {
+	return s.token
+}
+
+// URLWithToken returns the base URL with the auth token, for opening the UI
+// manually (e.g. from another terminal).
+func (s *UIServer) URLWithToken() string {
+	return s.URL() + "/?token=" + url.QueryEscape(s.token)
+}
+
+// requireAuth rejects API requests that do not carry the server's token. Static
+// assets and the health endpoint stay open so the UI can load and bootstrap.
+func (s *UIServer) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(requestToken(r)), []byte(s.token)) != 1 {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func requestToken(r *http.Request) string {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	}
+	if tok := r.Header.Get(localTokenHeader); tok != "" {
+		return tok
+	}
+	return r.URL.Query().Get("token")
+}
+
+func randomToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("integration_tester: failed to generate auth token: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
 
 // Stop shuts the server down and releases its resources.
@@ -397,18 +453,40 @@ func spaFileServer(dir string) http.Handler {
 }
 
 // withCORS allows the Electron renderer (file://) and the Vite dev server to
-// call the API from a different origin.
-func withCORS(next http.Handler) http.Handler {
+// call the API from a different origin, while rejecting arbitrary web origins.
+// Combined with the auth token this blocks drive-by requests from other sites
+// and DNS-rebinding attacks.
+func (s *UIServer) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if origin := r.Header.Get("Origin"); origin != "" && allowedOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+localTokenHeader)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// allowedOrigin permits same-origin/no-origin requests, Electron's file://
+// origin ("null"), and loopback origins used by the Vite dev server.
+func allowedOrigin(origin string) bool {
+	if origin == "null" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -433,18 +511,18 @@ func RunElectron(t *Tester) {
 		log.Fatalf("failed to start UI server: %v", err)
 	}
 	defer srv.Stop()
-	log.Printf("Integration Tester UI server listening at %s", srv.URL())
+	log.Printf("Integration Tester UI server listening at %s", srv.URLWithToken())
 
 	bin, baseArgs := resolveElectron(srv.uiDir)
 	if bin != "" {
-		if err := launchElectron(srv.URL(), srv.uiDir, bin, baseArgs); err != nil {
+		if err := launchElectron(srv.URL(), srv.uiDir, srv.Token(), bin, baseArgs); err != nil {
 			log.Printf("Electron exited: %v", err)
 		}
 		return
 	}
 
 	log.Printf("Electron not found; opening the browser instead")
-	openBrowser(srv.URL())
+	openBrowser(srv.URLWithToken())
 	waitForSignal()
 }
 
@@ -456,8 +534,8 @@ func RunServer(t *Tester) {
 		log.Fatalf("failed to start UI server: %v", err)
 	}
 	defer srv.Stop()
-	log.Printf("Integration Tester UI server listening at %s", srv.URL())
-	openBrowser(srv.URL())
+	log.Printf("Integration Tester UI server listening at %s", srv.URLWithToken())
+	openBrowser(srv.URLWithToken())
 	waitForSignal()
 }
 
@@ -490,7 +568,7 @@ func unregisterServer(s *UIServer) {
 	serverRegistryMu.Unlock()
 }
 
-func launchElectron(serverURL, uiDir, bin string, baseArgs []string) error {
+func launchElectron(serverURL, uiDir, token, bin string, baseArgs []string) error {
 	args := append(append([]string{}, baseArgs...), uiDir)
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = os.Stdout
@@ -498,6 +576,7 @@ func launchElectron(serverURL, uiDir, bin string, baseArgs []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Env = append(os.Environ(),
 		"IT_SERVER_URL="+serverURL,
+		"IT_TOKEN="+token,
 		"IT_UI_DIST="+filepath.Join(uiDir, "dist", "index.html"),
 	)
 	log.Printf("Launching Electron: %s %s", bin, strings.Join(args, " "))

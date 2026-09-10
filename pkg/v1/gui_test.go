@@ -20,7 +20,7 @@ func TestRunGUI(t *testing.T) {
 	defer srv.Stop()
 
 	client := &http.Client{Timeout: time.Second}
-	resp, err := client.Get(srv.URL() + "/api/state")
+	resp, err := client.Get(authURL(srv, "/api/state"))
 	if err != nil {
 		t.Fatalf("state request failed: %v", err)
 	}

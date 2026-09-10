@@ -62,14 +62,29 @@ if err := srv.Start(); err != nil {
     log.Fatal(err)
 }
 defer srv.Stop()
-log.Println("UI at", srv.URL()) // e.g. http://127.0.0.1:54321
+log.Println("UI at", srv.URLWithToken()) // e.g. http://127.0.0.1:54321/?token=...
 ```
+
+### Authentication
+
+The API is local-only but **authenticated** to block drive-by requests from
+other websites and DNS-rebinding attacks. A random token is generated per
+process. Send it on every API call except `GET /api/health`:
+
+- `Authorization: Bearer <token>`
+- `X-IT-Token: <token>`
+- `?token=<token>` (required for `EventSource`, which cannot set headers)
+
+`RunGUI` / `RunServer` inject the token into the UI automatically, so the normal
+workflow is unchanged. Use `srv.URLWithToken()` (or `srv.Token()`) when opening
+the UI manually. CORS only allows the Electron `file://` origin, loopback dev
+origins, and same-origin requests.
 
 ### HTTP API
 
 | Method + path | Body | Result |
 |---------------|------|--------|
-| `GET /api/health` | — | `{"status":"ok"}` |
+| `GET /api/health` | — | `{"status":"ok"}` (no token required) |
 | `GET /api/state` | — | full snapshot (see below) |
 | `GET /api/events` | — | SSE stream |
 | `POST /api/stage/run` | `{"name":"Setup","runPrerequisites":true}` | `202` accepted |

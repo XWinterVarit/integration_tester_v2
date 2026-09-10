@@ -2,6 +2,7 @@ const { app, BrowserWindow, shell } = require('electron')
 const path = require('node:path')
 
 const serverUrl = process.env.IT_SERVER_URL || ''
+const serverToken = process.env.IT_TOKEN || ''
 const devServerUrl = process.env.VITE_DEV_SERVER_URL || ''
 const indexHtml = process.env.IT_UI_DIST || path.join(__dirname, '..', 'dist', 'index.html')
 
@@ -21,10 +22,11 @@ function createWindow() {
   if (devServerUrl) {
     const url = new URL(devServerUrl)
     url.searchParams.set('server', serverUrl)
+    url.searchParams.set('token', serverToken)
     win.loadURL(url.toString())
     win.webContents.openDevTools({ mode: 'detach' })
   } else {
-    win.loadFile(indexHtml, { query: { server: serverUrl } })
+    win.loadFile(indexHtml, { query: { server: serverUrl, token: serverToken } })
   }
 
   // Open external links in the system browser instead of a new Electron window.

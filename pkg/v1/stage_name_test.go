@@ -32,7 +32,7 @@ func TestStageNameWithColon(t *testing.T) {
 	srv := startUITestServer(t, tester)
 
 	// State must expose the full name.
-	resp, err := http.Get(srv.URL() + "/api/state")
+	resp, err := http.Get(authURL(srv, "/api/state"))
 	if err != nil {
 		t.Fatalf("state request failed: %v", err)
 	}
@@ -46,13 +46,13 @@ func TestStageNameWithColon(t *testing.T) {
 	}
 
 	// Running the stage via the API must match the full name.
-	postJSON(t, srv.URL()+"/api/stage/run", map[string]any{"name": name}).Body.Close()
+	postJSON(t, authURL(srv, "/api/stage/run"), map[string]any{"name": name}).Body.Close()
 	if !waitFor(t, 2*time.Second, func() bool { return srv.getStatus(name) == "PASSED" }) {
 		t.Fatalf("stage %q did not pass via API, status=%q", name, srv.getStatus(name))
 	}
 
 	// Running the action via the API must resolve the stage by its full name.
-	postJSON(t, srv.URL()+"/api/action/run", map[string]any{"stage": name, "index": 0}).Body.Close()
+	postJSON(t, authURL(srv, "/api/action/run"), map[string]any{"stage": name, "index": 0}).Body.Close()
 	if !waitFor(t, 2*time.Second, func() bool { return actionRan }) {
 		t.Fatalf("action for stage %q was not executed", name)
 	}

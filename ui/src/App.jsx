@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   discover,
+  eventsUrl,
   fetchState,
   resolveServerUrl,
   runAction,
@@ -35,7 +36,7 @@ export default function App() {
   }, [refresh])
 
   useEffect(() => {
-    const source = new EventSource(`${serverUrl}/api/events`)
+    const source = new EventSource(eventsUrl(serverUrl))
 
     source.onopen = () => {
       setConnected(true)

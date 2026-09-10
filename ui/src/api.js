@@ -5,14 +5,43 @@ function trimSlash(url) {
 }
 
 export function resolveServerUrl() {
-  if (typeof window !== 'undefined' && window.integrationTester?.serverUrl) {
-    return trimSlash(window.integrationTester.serverUrl)
-  }
-  const fromQuery = new URLSearchParams(window.location.search).get('server')
-  if (fromQuery) {
-    return trimSlash(fromQuery)
+  if (typeof window !== 'undefined') {
+    if (window.integrationTester?.serverUrl) {
+      return trimSlash(window.integrationTester.serverUrl)
+    }
+    const fromQuery = new URLSearchParams(window.location.search).get('server')
+    if (fromQuery) {
+      return trimSlash(fromQuery)
+    }
+    // Served directly by the Go server (browser fallback): same origin.
+    if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+      return trimSlash(window.location.origin)
+    }
   }
   return DEFAULT_SERVER
+}
+
+export function resolveToken() {
+  if (typeof window !== 'undefined') {
+    if (window.integrationTester?.token) {
+      return window.integrationTester.token
+    }
+    const hash = window.location.hash.replace(/^#/, '')
+    const fromHash = new URLSearchParams(hash).get('token')
+    if (fromHash) {
+      return fromHash
+    }
+    const fromQuery = new URLSearchParams(window.location.search).get('token')
+    if (fromQuery) {
+      return fromQuery
+    }
+  }
+  return ''
+}
+
+export function eventsUrl(base) {
+  const token = resolveToken()
+  return `${base}/api/events${token ? `?token=${encodeURIComponent(token)}` : ''}`
 }
 
 export function fetchState(base) {
@@ -42,9 +71,14 @@ export function discover(base) {
 }
 
 async function request(base, path, options = {}) {
+  const headers = {}
+  if (options.body) headers['Content-Type'] = 'application/json'
+  const token = resolveToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
   const res = await fetch(base + path, {
     method: options.method || 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   })
 
